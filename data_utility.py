@@ -6,7 +6,7 @@ performance bottleneck at the moment, we use plain CSV files for serialization.
 """
 
 import pathlib
-from typing import Union, Tuple
+from typing import List, Union, Tuple
 
 import pandas as pd
 
@@ -22,3 +22,8 @@ def save_dataset(X: pd.DataFrame, y: Union[pd.DataFrame, pd.Series], dataset_nam
                  directory: pathlib.Path) -> None:
     X.to_csv(directory / (dataset_name + '_X.csv'), index=False)
     y.to_csv(directory / (dataset_name + '_y.csv'), index=False)
+
+
+# List dataset names based on the files in the "directory".
+def list_datasets(directory: pathlib.Path) -> List[str]:
+    return [file.name.split('_X.')[0] for file in list(directory.glob('*_X.*'))]
