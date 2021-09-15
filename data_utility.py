@@ -6,7 +6,7 @@ performance bottleneck at the moment, we use plain CSV files for serialization.
 """
 
 import pathlib
-from typing import List, Union, Tuple
+from typing import List, Optional, Union, Tuple
 
 import pandas as pd
 
@@ -18,12 +18,18 @@ def load_dataset(dataset_name: str, directory: pathlib.Path) -> Tuple[pd.DataFra
     return X, y
 
 
-def save_dataset(X: pd.DataFrame, y: Union[pd.DataFrame, pd.Series], dataset_name: str,
-                 directory: pathlib.Path) -> None:
-    X.to_csv(directory / (dataset_name + '_X.csv'), index=False)
-    y.to_csv(directory / (dataset_name + '_y.csv'), index=False)
+def save_dataset(dataset_name: str, directory: pathlib.Path, X: Optional[pd.DataFrame] = None,
+                 y: Optional[Union[pd.DataFrame, pd.Series]] = None) -> None:
+    if X is not None:
+        X.to_csv(directory / (dataset_name + '_X.csv'), index=False)
+    if y is not None:
+        y.to_csv(directory / (dataset_name + '_y.csv'), index=False)
 
 
 # List dataset names based on the files in the "directory".
 def list_datasets(directory: pathlib.Path) -> List[str]:
     return [file.name.split('_X.')[0] for file in list(directory.glob('*_X.*'))]
+
+
+def name_meta_target(base_model_name: str, importance_measure_name: str) -> str:
+    return base_model_name + '#' + importance_measure_name

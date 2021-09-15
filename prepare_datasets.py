@@ -10,8 +10,9 @@ Usage: python -m prepare_datasets --help
 """
 
 import argparse
+import multiprocessing
 import pathlib
-from typing import Optional, Sequence
+from typing import Collection, Dict, Optional, Sequence, Union
 import warnings
 
 import numpy as np
@@ -21,6 +22,7 @@ import sklearn.preprocessing
 import tqdm
 
 import data_utility
+import meta_targets
 
 
 # Download one base dataset with the given "data_id" from OpenML and store it in X, y format in
@@ -35,7 +37,7 @@ def download_base_dataset(data_id: int, base_data_dir: pathlib.Path) -> None:
         X=X[non_numeric_features])
     assert all(np.issubdtype(X[feature].dtype, np.number) for feature in X.columns)
     y = pd.Series(sklearn.preprocessing.LabelEncoder().fit_transform(y=y), name=y.name)
-    data_utility.save_dataset(X, y, dataset_name=dataset.name, directory=base_data_dir)
+    data_utility.save_dataset(X=X, y=y, dataset_name=dataset.name, directory=base_data_dir)
 
 
 # Download OpenML datasets and store them in "base_data_dir". Either retrieve base datasets by
@@ -92,12 +94,59 @@ def prepare_base_datasets(base_data_dir: pathlib.Path, data_ids: Optional[Sequen
     print('Base datasets prepared and saved.')
 
 
-# For each base dataset from "base_data_dir", compute all meta-features and meta-targets, i.e.,
-# all feature-importance measures for all base models. Save the resulting meta-datasets into
+# For each base dataset from "base_data_dir", compute all meta-features. Save the resulting
+# meta-data into "meta_data_dir".
+def prepare_meta_features(base_data_dir: pathlib.Path, meta_data_dir: pathlib.Path,
+                          n_processes: Optional[int] = None) -> None:
+    print('Meta-feature preparation started.')
+    print('Meta-features prepared and saved.')
+
+
+# Compute one meta-target, i.e., apply one importance measure and one base model to one base
+# dataset. Return the actual meta-target (numeric feature importances) and some information
+# identifying it.
+def compute_meta_target(base_data_dir: pathlib.Path, base_dataset_name: str, base_model_name: str,
+                        importance_measure_name: str) -> Dict[str, Union[str, Collection[float]]]:
+    result = {'base_dataset': base_dataset_name, 'base_model': base_model_name,
+              'importance_measure': importance_measure_name}
+    X, y = data_utility.load_dataset(dataset_name=base_dataset_name, directory=base_data_dir)
+    importance_type = meta_targets.IMPORTANCE_MEASURES[importance_measure_name]
+    base_model_func = meta_targets.BASE_MODELS[base_model_name]['func']
+    base_model_args = meta_targets.BASE_MODELS[base_model_name]['args']
+    result['values'] = importance_type.compute_importance(X=X, y=y, model_func=base_model_func,
+                                                          model_args=base_model_args)
+    return result
+
+
+# For each base dataset from "base_data_dir", compute all meta-targets, i.e., all
+# feature-importance measures for all base models. Save the resulting meta-data into
 # "meta_data_dir".
-def prepare_meta_datasets(base_data_dir: pathlib.Path, meta_data_dir: pathlib.Path) -> None:
-    print('Meta-dataset preparation started.')
-    print('Meta-datasets prepared and saved.')
+def prepare_meta_targets(base_data_dir: pathlib.Path, meta_data_dir: pathlib.Path,
+                         n_processes: Optional[int] = None) -> None:
+    print('Meta-target preparation started.')
+    base_datasets = data_utility.list_datasets(directory=base_data_dir)
+    with tqdm.tqdm(total=(len(base_datasets) * len(meta_targets.IMPORTANCE_MEASURES) *
+                          len(meta_targets.BASE_MODELS)), desc='Computing meta-targets') as progress_bar:
+        with multiprocessing.Pool(processes=n_processes) as process_pool:
+            results = [process_pool.apply_async(compute_meta_target, kwds={
+                'base_data_dir': base_data_dir, 'base_dataset_name': base_dataset_name,
+                'base_model_name': base_model_name, 'importance_measure_name': importance_measure_name
+                }, callback=lambda x: progress_bar.update())
+                for base_dataset_name in base_datasets
+                for base_model_name in meta_targets.BASE_MODELS.keys()
+                for importance_measure_name in meta_targets.IMPORTANCE_MEASURES.keys()]
+            results = [x.get() for x in results]
+    # Combine individual meta-targets to one data frame per base dataset:
+    meta_target_data = {base_dataset_name: pd.DataFrame() for base_dataset_name in base_datasets}
+    for result in results:
+        column_name = data_utility.name_meta_target(
+            importance_measure_name=result['importance_measure'],
+            base_model_name=result['base_model'])
+        meta_target_data[result['base_dataset']][column_name] = result['values']
+    for base_dataset_name, data_frame in meta_target_data.items():
+        data_utility.save_dataset(dataset_name=base_dataset_name, directory=meta_data_dir,
+                                  y=data_frame)
+    print('Meta-targets prepared and saved.')
 
 
 # Parse command-line arguments and prepare base + meta datasets.
@@ -111,6 +160,11 @@ if __name__ == '__main__':
                         help='Ids of OpenML datasets. If none provided, will search for datasets.')
     parser.add_argument('-m', '--meta_data_dir', type=pathlib.Path, default='data/meta_datasets/',
                         help='Directory to store meta-datasets. Will be created if necessary.')
+    parser.add_argument('-p', '--n_processes', type=int, default=None,
+                        help='Number of processes for multi-processing (default: all cores).')
     args = parser.parse_args()
     prepare_base_datasets(base_data_dir=args.base_data_dir, data_ids=args.data_ids)
-    prepare_meta_datasets(base_data_dir=args.base_data_dir, meta_data_dir=args.meta_data_dir)
+    prepare_meta_features(base_data_dir=args.base_data_dir, meta_data_dir=args.meta_data_dir,
+                          n_processes=args.n_processes)
+    prepare_meta_targets(base_data_dir=args.base_data_dir, meta_data_dir=args.meta_data_dir,
+                         n_processes=args.n_processes)
