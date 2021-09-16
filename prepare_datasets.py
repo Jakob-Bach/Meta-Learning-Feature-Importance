@@ -22,6 +22,7 @@ import sklearn.preprocessing
 import tqdm
 
 import data_utility
+import meta_features
 import meta_targets
 
 
@@ -94,11 +95,28 @@ def prepare_base_datasets(base_data_dir: pathlib.Path, data_ids: Optional[Sequen
     print('Base datasets prepared and saved.')
 
 
+# Compute all meta-features for one base dataset with "base_dataset_name", located in
+# "base_data_dir", and store the resulting meta-data in "meta_data_dir"
+def compute_and_save_meta_features(base_data_dir: pathlib.Path, base_dataset_name: str,
+                                   meta_data_dir: pathlib.Path) -> None:
+    X, y = data_utility.load_dataset(dataset_name=base_dataset_name, directory=base_data_dir)
+    result = meta_features.compute_meta_features(X=X, y=y)
+    data_utility.save_dataset(dataset_name=base_dataset_name, directory=meta_data_dir, X=result)
+
+
 # For each base dataset from "base_data_dir", compute all meta-features. Save the resulting
 # meta-data into "meta_data_dir".
 def prepare_meta_features(base_data_dir: pathlib.Path, meta_data_dir: pathlib.Path,
                           n_processes: Optional[int] = None) -> None:
     print('Meta-feature preparation started.')
+    base_datasets = data_utility.list_datasets(directory=base_data_dir)
+    with tqdm.tqdm(total=(len(base_datasets)), desc='Computing meta-features') as progress_bar:
+        with multiprocessing.Pool(processes=n_processes) as process_pool:
+            results = [process_pool.apply_async(compute_and_save_meta_features, kwds={
+                'base_data_dir': base_data_dir, 'base_dataset_name': base_dataset_name,
+                'meta_data_dir': meta_data_dir}, callback=lambda x: progress_bar.update())
+                for base_dataset_name in base_datasets]
+            [x.wait() for x in results]  # don't need to return value here, just wait till finished
     print('Meta-features prepared and saved.')
 
 
