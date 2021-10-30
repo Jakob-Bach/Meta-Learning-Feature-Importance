@@ -1,12 +1,12 @@
 # Meta-Learning Feature Importance
 
-This repository contains the code of the paper
+This repository contains the code of the planned paper
 
 > Bach, Jakob, and Cem Özcan. "Meta-Learning Feature Importance"
 
-(The paper is not published yet.)
-This document describes the steps to reproduce the experiments.
-Experimental data are also available [online](This link does not work yet).
+This is a re-implementation of [MetaLFI](https://github.com/CemOezcan/metalfi).
+The paper won't appear though, as this research project was discontinued 🙃.
+This document should describe the steps to reproduce the experiments.
 
 ## Setup
 
@@ -97,6 +97,8 @@ To print statistics and create the plots for the paper, run
 ```bash
 python -m run_evaluation
 ```
+
+(This script does not exist yet.)
 
 All scripts have a few command line options, which you can see by running the scripts like
 
